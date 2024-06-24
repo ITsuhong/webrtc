@@ -32,13 +32,13 @@ io.on('connection', sock => {
 
     // 接收offer
     sock.on('sendOffer', ({offer, roomId}) => {
-        console.log("收到off")
+        // console.log("收到off", offer, roomId)
         io.to(roomId).emit('sendOffer', offer)
     })
 
     // 接收answer
     sock.on('sendAnswer', ({answer, roomId}) => {
-        console.log('收到回复', answer)
+        console.log("收到回复", answer)
         io.to(roomId).emit('sendAnswer', answer)
     })
 

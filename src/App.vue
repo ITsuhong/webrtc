@@ -11,7 +11,7 @@ const removeVideoRef = ref(null);
 const lightalk = ref(false)
 const connect = ref(false)
 const peer = ref()
-const sock = io('http://192.168.2.4:3000');
+const sock = io('http://172.20.200.146:3000');
 let roomId = 1
 
 
@@ -21,6 +21,7 @@ const getLocalStream = async () => {
     audio: false,
     video: true,
   })
+  console.log("这是本地流", stream)
   localVideoRef.value.srcObject = stream
 
   localVideoRef.value.play()
@@ -50,29 +51,41 @@ onMounted(() => {
       calling.value = false
       console.log('对方同意')
       peer.value = new RTCPeerConnection()
-      localStream.value.getTracks().forEach(track => {
-        peer.value.addTrack(track, localStream.value)
-      })
+      peer.value.addTrack(localStream.value.getVideoTracks()[0], localStream.value)
+      // localStream.value.getTracks().forEach(track => {
+      //   peer.value.addTrack(track, localStream.value)
+      // })
       peer.value.onicecandidate = (event) => {
         if (event.candidate) {
           console.log("A触发", peer.value)
-          sock.emit('sendCandidate', {candidate: event.candidate})
+          sock.emit('sendCandidate', {candidate: event.candidate, roomId})
         }
 
       }
-      peer.onaddstream = (event) => {
-        console.log("求求了")
-      }
-      peer.value.ontrack = async ({streams: [stream]}) => {
-        removeVideoRef.value.srcObject = stream
+      sock.on('sendCandidate', async (candidate) => {
+        console.log("收到Candidate这是发起", candidate)
+        try {
+          if (candidate) {
+            console.log('收到Candidate', candidate)
+            await peer.value.addIceCandidate(candidate)
+          }
+        } catch (e) {
 
-        removeVideoRef.value.play()
+        }
 
-        connect.value = true
+      })
+
+      peer.value.ontrack = async (e) => {
+        if (removeVideoRef.value.srcObject !== e.streams[0]) {
+          removeVideoRef.value.srcObject = e.streams[0];
+          removeVideoRef.value.play()
+
+          console.log('pc received remote stream');
+        }
       }
       let offer = await peer.value.createOffer({
-        offerToReceiveAudio: 1,
-        offerToReceiveVideo: 1,
+        offerToReceiveAudio: true,
+        offerToReceiveVideo: true,
       })
       await peer.value.setLocalDescription(offer)
       console.log('offer', offer)
@@ -85,22 +98,41 @@ onMounted(() => {
       console.log("收到offer", offer)
       peer.value = new RTCPeerConnection()
       const stream = await getLocalStream()
-      stream.getTracks().forEach(track => {
-        // console.log(track, 'track')
-        peer.value.addTrack(track, stream)
-      })
+      peer.value.addTrack(stream.getVideoTracks()[0], stream)
+      // stream.getTracks().forEach(track => {
+      //   // console.log(track, 'track')
+      //   peer.value.addTrack(track, stream)
+      // })
       peer.value.onicecandidate = (event) => {
 
         if (event.candidate) {
           console.log("B触发", event.candidate)
-          sock.emit('sendCandidate', {candidate: event.candidate})
+          sock.emit('sendCandidate', {candidate: event.candidate, roomId})
         }
       }
-      peer.value.ontrack = ({streams: [stream]}) => {
-        console.log("用户B收到", stream)
-        removeVideoRef.value.srcObject = stream
-        // console.log(removeVideoRef.value)
-        removeVideoRef.value.play()
+      sock.on('sendCandidate', async (candidate) => {
+
+        try {
+          if (candidate) {
+            console.log('收到Candidate', candidate)
+            await peer.value.addIceCandidate(candidate)
+          }
+        } catch (e) {
+
+        }
+
+      })
+      peer.value.ontrack = (e) => {
+        console.log("用户B收到", e.streams[0])
+        if (removeVideoRef.value.srcObject !== e.streams[0]) {
+          removeVideoRef.value.srcObject = e.streams[0];
+          removeVideoRef.value.play()
+
+          console.log('pc received remote stream');
+        }
+        // removeVideoRef.value.srcObject = e.streams[0];
+        // // console.log(removeVideoRef.value)
+        // removeVideoRef.value.play()
         connect.value = true
       }
       await peer.value.setRemoteDescription(offer)
@@ -118,21 +150,16 @@ onMounted(() => {
 
   // 发起人收到answer
   sock.on('sendAnswer', async (answer) => {
-    if (caller.value) {
-      console.log("发起人收到回复", answer)
-      await peer.value.setRemoteDescription(answer)
+    try {
+      if (caller.value) {
+        console.log("发起人收到回复", answer)
+        await peer.value.setRemoteDescription(answer)
+      }
+    } catch (e) {
+      console.log(e, "出错了")
     }
   })
 
-
-  sock.on('sendCandidate', (candidate) => {
-
-    if (candidate) {
-      console.log('收到Candidate', candidate)
-      peer.value.addIceCandidate(candidate)
-    }
-
-  })
 
 })
 const handleOptionCall = () => {
@@ -152,8 +179,9 @@ const handleOptionAccept = () => {
 <template>
 
   <div class="flex items-center justify-center h-screen flex-col">
-    <video ref="removeVideoRef" class="w-[200px] h-[200px] bg-black"></video>
+    <video ref="removeVideoRef" class="absolute top-0 right-0 border-2 bg-red-100 w-44"></video>
     <div class="w-[400px] h-[600px] bg-red-100 relative">
+
       <video ref="localVideoRef" class="w-full h-full bg-black"></video>
       <div v-if="caller" class="absolute top-0 left-0 w-full h-full  z-10 text-red-500 flex justify-center items-end">
         <div class="mb-10" v-if="caller && calling">
@@ -175,6 +203,7 @@ const handleOptionAccept = () => {
       <div @click="handleOptionAccept" class="bg-green-500 rounded-xl p-2 mt-3 ">接受视频</div>
     </div>
   </div>
+
 </template>
 
 <style scoped>
